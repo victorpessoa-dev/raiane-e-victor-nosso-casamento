@@ -10,7 +10,15 @@ export function MusicPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.35);
-  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    audio.volume = volume;
+  }, [volume]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -25,11 +33,9 @@ export function MusicPlayer() {
       setVolume(audio.volume);
     };
     const handleError = () => {
-      setHasError(true);
       setIsPlaying(false);
     };
 
-    audio.volume = volume;
     audio.muted = false;
 
     audio.addEventListener('play', handlePlay);
@@ -37,11 +43,25 @@ export function MusicPlayer() {
     audio.addEventListener('volumechange', handleVolumeChange);
     audio.addEventListener('error', handleError);
 
-    audio.play().catch(() => {
-      setHasError(true);
+    const startPlaybackOnFirstGesture = async () => {
+      if (!audio.paused) {
+        return;
+      }
+
+      try {
+        await audio.play();
+      } catch {}
+    };
+
+    const interactionEvents = ['pointerdown', 'touchstart', 'keydown'];
+    interactionEvents.forEach((eventName) => {
+      window.addEventListener(eventName, startPlaybackOnFirstGesture, { once: true });
     });
 
     return () => {
+      interactionEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, startPlaybackOnFirstGesture);
+      });
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('volumechange', handleVolumeChange);
@@ -58,10 +78,7 @@ export function MusicPlayer() {
     if (audio.paused) {
       try {
         await audio.play();
-        setHasError(false);
-      } catch {
-        setHasError(true);
-      }
+      } catch {}
       return;
     }
 
@@ -126,14 +143,6 @@ export function MusicPlayer() {
           {isPlaying ? 'Musica ativa' : 'Musica pausada'}
         </span>
       </div>
-
-      {hasError ? (
-        <div className="fixed bottom-20 left-4 z-40 max-w-[19rem] rounded-[1rem] border border-red-200 bg-white/92 px-4 py-3 shadow-lg sm:bottom-24 sm:left-6">
-          <p className="font-lato text-xs text-red-600">
-            Se o navegador bloquear o autoplay, use o botao play.
-          </p>
-        </div>
-      ) : null}
     </>
   );
 }

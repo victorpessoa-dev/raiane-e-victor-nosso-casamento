@@ -12,21 +12,48 @@ import { createMediaUpload } from '@/lib/media-service';
 import { rateLimit } from '@/lib/rate-limit';
 
 function getRequestIdentifier(request) {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
+  const headerCandidates = [
+    'cf-connecting-ip',
+    'x-nf-client-connection-ip',
+    'x-real-ip',
+    'x-client-ip',
+    'fly-client-ip',
+    'x-vercel-forwarded-for',
+    'x-forwarded-for',
+  ];
+
+  for (const headerName of headerCandidates) {
+    const headerValue = request.headers.get(headerName);
+    if (headerValue) {
+      const firstValue = headerValue.split(',')[0]?.trim();
+      if (firstValue) {
+        return firstValue;
+      }
+    }
   }
 
-  return request.headers.get('x-real-ip') || 'unknown';
+  return null;
+}
+
+function isFileLike(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+
+  return typeof entry.arrayBuffer === 'function'
+    && typeof entry.name === 'string'
+    && typeof entry.size === 'number';
 }
 
 export async function POST(request) {
   const requestId = getRequestIdentifier(request);
-  const uploadRate = rateLimit({
-    key: `upload:${requestId}`,
-    limit: 8,
-    windowMs: 10 * 60 * 1000,
-  });
+  const uploadRate = requestId
+    ? rateLimit({
+      key: `upload:${requestId}`,
+      limit: 8,
+      windowMs: 10 * 60 * 1000,
+    })
+    : { success: true, retryAfterSeconds: 0 };
 
   if (!uploadRate.success) {
     return NextResponse.json(
@@ -45,15 +72,21 @@ export async function POST(request) {
   const message = String(formData.get('message') || '').trim();
   const files = formData
     .getAll('files')
-    .filter((entry) => entry instanceof File);
+    .filter(isFileLike);
   const fileDurations = formData.getAll('fileDurations');
 
   if (files.length === 0) {
     return NextResponse.json({ error: 'Selecione pelo menos um arquivo.' }, { status: 400 });
   }
 
-  const imageFiles = files.filter((file) => !isVideoMimeType(file.type));
-  const videoFiles = files.filter((file) => isVideoMimeType(file.type));
+  const imageFiles = files.filter((file) => {
+    const mimeType = normalizeAcceptedMimeType(file.type, file.name);
+    return mimeType && !isVideoMimeType(mimeType);
+  });
+  const videoFiles = files.filter((file) => {
+    const mimeType = normalizeAcceptedMimeType(file.type, file.name);
+    return mimeType && isVideoMimeType(mimeType);
+  });
 
   if (imageFiles.length > MAX_IMAGE_UPLOADS_PER_BATCH) {
     return NextResponse.json(
@@ -70,7 +103,7 @@ export async function POST(request) {
   }
 
   for (const [index, file] of files.entries()) {
-    const mimeType = normalizeAcceptedMimeType(file.type);
+    const mimeType = normalizeAcceptedMimeType(file.type, file.name);
     if (!mimeType) {
       return NextResponse.json(
         { error: `${file.name} possui um formato nao suportado.` },
@@ -78,7 +111,7 @@ export async function POST(request) {
       );
     }
 
-    const maxFileSize = getMaxFileSizeBytes(file.type);
+    const maxFileSize = getMaxFileSizeBytes(mimeType);
     if (file.size > maxFileSize) {
       return NextResponse.json(
         { error: `${file.name} excede o limite de ${Math.round(maxFileSize / (1024 * 1024))} MB.` },
@@ -86,7 +119,7 @@ export async function POST(request) {
       );
     }
 
-    if (isVideoMimeType(file.type)) {
+    if (isVideoMimeType(mimeType)) {
       const rawDuration = fileDurations[index];
       const durationSeconds = Number(rawDuration);
 

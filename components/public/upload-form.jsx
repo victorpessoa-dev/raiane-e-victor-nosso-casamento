@@ -4,21 +4,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader as Loader2, Upload, Video, X } from 'lucide-react';
 
 import {
-  ACCEPTED_MIME_TYPES,
   getMaxFileSizeBytes,
+  getAcceptedUploadInputTypes,
+  isBrowserPreviewableImageMimeType,
   isVideoMimeType,
   MAX_IMAGE_UPLOADS_PER_BATCH,
   MAX_VIDEO_DURATION_SECONDS,
   MAX_VIDEO_UPLOADS_PER_BATCH,
+  normalizeAcceptedMimeType,
 } from '@/lib/constants';
 import { formatBytes } from '@/lib/format';
 
 function buildPreviewItem(file) {
+  const mimeType = normalizeAcceptedMimeType(file.type, file.name) || file.type;
+  const isImage = !isVideoMimeType(mimeType);
+  const canPreview = isImage && isBrowserPreviewableImageMimeType(mimeType);
+
   return {
     file,
     id: `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`,
-    preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-    type: file.type.startsWith('image/') ? 'image' : 'video',
+    preview: canPreview ? URL.createObjectURL(file) : null,
+    type: isImage ? 'image' : 'video',
+    mimeType,
     duration: null,
   };
 }
@@ -76,19 +83,20 @@ export function UploadForm() {
 
     for (const file of selectedFiles) {
       let validatedDuration = null;
+      const mimeType = normalizeAcceptedMimeType(file.type, file.name);
 
-      if (!ACCEPTED_MIME_TYPES.includes(file.type)) {
+      if (!mimeType) {
         nextError = `${file.name} possui um formato nao suportado.`;
         continue;
       }
 
-      const maxFileSize = getMaxFileSizeBytes(file.type);
+      const maxFileSize = getMaxFileSizeBytes(mimeType);
       if (file.size > maxFileSize) {
         nextError = `${file.name} excede o limite de ${Math.round(maxFileSize / (1024 * 1024))} MB.`;
         continue;
       }
 
-      if (isVideoMimeType(file.type)) {
+      if (isVideoMimeType(mimeType)) {
         if (videoCount >= MAX_VIDEO_UPLOADS_PER_BATCH) {
           nextError = `Envie no maximo ${MAX_VIDEO_UPLOADS_PER_BATCH} videos por vez.`;
           continue;
@@ -116,7 +124,7 @@ export function UploadForm() {
       }
 
       const previewItem = buildPreviewItem(file);
-      if (isVideoMimeType(file.type)) {
+      if (isVideoMimeType(mimeType)) {
         previewItem.duration = validatedDuration;
       }
 
@@ -235,7 +243,7 @@ export function UploadForm() {
             ref={inputRef}
             type="file"
             multiple
-            accept={ACCEPTED_MIME_TYPES.join(',')}
+            accept={getAcceptedUploadInputTypes().join(',')}
             className="hidden"
             onChange={(event) => addFiles(Array.from(event.target.files || []))}
           />

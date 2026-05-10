@@ -1,5 +1,7 @@
 create extension if not exists pgcrypto;
 
+create schema if not exists private;
+
 create table if not exists public.project_owner (
   id boolean primary key default true check (id = true),
   owner_user_id uuid not null unique references auth.users (id) on delete restrict,
@@ -18,11 +20,11 @@ alter table public.media_uploads
 alter table public.media_uploads
   add column if not exists is_visible boolean not null default true;
 
-create or replace function public.current_project_owner_id()
+create or replace function private.current_project_owner_id()
 returns uuid
 language sql
 security definer
-set search_path = public
+set search_path = public, private
 stable
 as $$
   select owner_user_id
@@ -31,16 +33,16 @@ as $$
   limit 1
 $$;
 
-create or replace function public.assign_project_owner_to_media_upload()
+create or replace function private.assign_project_owner_to_media_upload()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, private
 as $$
 declare
   configured_owner uuid;
 begin
-  configured_owner := public.current_project_owner_id();
+  configured_owner := private.current_project_owner_id();
 
   if configured_owner is null then
     raise exception 'Project owner not configured.';
@@ -58,7 +60,10 @@ drop trigger if exists set_project_owner_on_media_uploads on public.media_upload
 create trigger set_project_owner_on_media_uploads
 before insert on public.media_uploads
 for each row
-execute function public.assign_project_owner_to_media_upload();
+execute function private.assign_project_owner_to_media_upload();
+
+grant usage on schema private to authenticated;
+grant execute on function private.current_project_owner_id() to authenticated;
 
 create index if not exists media_uploads_owner_created_at_idx
   on public.media_uploads (owner_user_id, created_at desc);
@@ -71,6 +76,8 @@ drop policy if exists "Public can upload pending media" on public.media_uploads;
 drop policy if exists "Public can view visible media" on public.media_uploads;
 drop policy if exists "Admins can manage media uploads" on public.media_uploads;
 drop policy if exists "Owner can manage own media uploads" on public.media_uploads;
+drop policy if exists "Owner can update own media uploads" on public.media_uploads;
+drop policy if exists "Owner can delete own media uploads" on public.media_uploads;
 
 create policy "Public can upload pending media"
   on public.media_uploads
@@ -84,12 +91,18 @@ create policy "Public can view visible media"
   to anon, authenticated
   using (is_visible = true);
 
-create policy "Owner can manage own media uploads"
+create policy "Owner can update own media uploads"
   on public.media_uploads
-  for all
+  for update
   to authenticated
-  using (owner_user_id = auth.uid())
-  with check (owner_user_id = auth.uid());
+  using (owner_user_id = (select auth.uid()))
+  with check (owner_user_id = (select auth.uid()));
+
+create policy "Owner can delete own media uploads"
+  on public.media_uploads
+  for delete
+  to authenticated
+  using (owner_user_id = (select auth.uid()));
 
 drop policy if exists "Owner can view project owner config" on public.project_owner;
 
@@ -97,7 +110,7 @@ create policy "Owner can view project owner config"
   on public.project_owner
   for select
   to authenticated
-  using (owner_user_id = auth.uid());
+  using (owner_user_id = (select auth.uid()));
 
 insert into storage.buckets (id, name, public)
 values ('wedding-media', 'wedding-media', false)
@@ -140,11 +153,11 @@ create policy "Owner can manage wedding media objects"
   to authenticated
   using (
     bucket_id = 'wedding-media'
-    and public.current_project_owner_id() = auth.uid()
+    and private.current_project_owner_id() = (select auth.uid())
   )
   with check (
     bucket_id = 'wedding-media'
-    and public.current_project_owner_id() = auth.uid()
+    and private.current_project_owner_id() = (select auth.uid())
   );
 
 create policy "Public can cleanup orphan wedding media objects"

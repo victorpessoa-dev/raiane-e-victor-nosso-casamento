@@ -1,21 +1,31 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader as Loader2, Video } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
-function rotate(index, length, step) {
-  return (index + step + length) % length;
+const PUBLIC_MEDIA_REFRESH_MS = 20 * 60 * 1000;
+const DEFAULT_WALLPAPER_IMAGE = '/default-image.jpeg';
+
+function WallpaperTile({ item, aspectRatio, onLoad, priority = false }) {
+  return (
+    <div
+      className="relative h-full shrink-0 overflow-hidden bg-black/10"
+      style={{ aspectRatio: aspectRatio || '3 / 4' }}
+    >
+      <img
+        src={item.signedUrl}
+        alt={item.fileName}
+        className="block h-full w-auto max-w-none object-contain"
+        loading={priority ? 'eager' : 'lazy'}
+        onLoad={onLoad}
+      />
+    </div>
+  );
 }
 
 export function MediaCarousel() {
   const [items, setItems] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [fade, setFade] = useState(true);
-  const autoplayRef = useRef(null);
-
-  const totalItems = items.length;
-  const currentItem = useMemo(() => items[currentIndex], [currentIndex, items]);
+  const [aspectMap, setAspectMap] = useState({});
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -23,133 +33,83 @@ export function MediaCarousel() {
     async function loadItems() {
       try {
         const response = await fetch('/api/media', { cache: 'no-store' });
-        const data = await response.json();
-        if (active) {
-          setItems(Array.isArray(data.items) ? data.items : []);
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Falha ao carregar wallpaper.');
         }
-      } finally {
+
         if (active) {
-          setLoading(false);
+          setItems(Array.isArray(data.items) ? data.items.filter((item) => item.fileType === 'image') : []);
+          setHasError(false);
+        }
+      } catch {
+        if (active) {
+          setItems([]);
+          setHasError(true);
         }
       }
     }
 
     loadItems();
+    const refreshId = window.setInterval(loadItems, PUBLIC_MEDIA_REFRESH_MS);
     return () => {
       active = false;
+      window.clearInterval(refreshId);
     };
   }, []);
 
-  useEffect(() => {
-    if (totalItems <= 1) {
-      return undefined;
+  const wallpaperItems = useMemo(() => {
+    if (items.length === 0) {
+      return [];
     }
 
-    clearInterval(autoplayRef.current);
-    autoplayRef.current = setInterval(() => {
-      setFade(false);
-      setTimeout(() => {
-        setCurrentIndex((value) => rotate(value, totalItems, 1));
-        setFade(true);
-      }, 300);
-    }, 5000);
+    return [...items, ...items];
+  }, [items]);
 
-    return () => clearInterval(autoplayRef.current);
-  }, [totalItems]);
+  const handleImageLoad = (itemId, event) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    if (!naturalWidth || !naturalHeight) {
+      return;
+    }
 
-  const jumpTo = (nextIndex) => {
-    clearInterval(autoplayRef.current);
-    setFade(false);
-    setTimeout(() => {
-      setCurrentIndex(nextIndex);
-      setFade(true);
-    }, 300);
+    const nextAspect = `${naturalWidth} / ${naturalHeight}`;
+
+    setAspectMap((current) => (
+      current[itemId] === nextAspect
+        ? current
+        : { ...current, [itemId]: nextAspect }
+    ));
   };
 
-  if (loading) {
+  if (wallpaperItems.length === 0) {
     return (
-      <div className="relative flex h-72 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-white to-zinc-50 sm:h-80 md:h-[500px]">
-        <div className="shimmer-loading absolute inset-0" />
-        <Loader2 className="relative z-10 animate-spin text-burgundy-400" size={40} strokeWidth={1.5} />
-      </div>
-    );
-  }
-
-  if (!currentItem) {
-    return (
-      <div className="group relative flex h-72 flex-col items-center justify-center gap-4 overflow-hidden rounded-2xl border-2 border-dashed border-burgundy-200 bg-white px-6 sm:h-80 md:h-[500px]">
-        <div className="absolute inset-0 bg-gradient-to-br from-burgundy-50/0 to-burgundy-50/50 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
-        <Video className="relative z-10 text-burgundy-200 transition-colors group-hover:text-burgundy-300" size={48} strokeWidth={1} />
-        <p className="relative z-10 font-playfair text-lg text-burgundy-700">Momentos em breve</p>
-        <p className="relative z-10 max-w-xs text-center font-lato text-sm text-muted-foreground">
-          Comece enviando suas fotos para ve-las aqui em tempo real.
-        </p>
+      <div className="absolute inset-0 overflow-hidden bg-[#120c0d]">
+        <img
+          src={DEFAULT_WALLPAPER_IMAGE}
+          alt="Imagem padrao do wallpaper"
+          className="h-full w-full scale-[1.04] object-cover blur-[3.5px]"
+        />
+        <div className="absolute inset-0 bg-black/20" />
       </div>
     );
   }
 
   return (
-    <div className="group relative h-72 overflow-hidden rounded-2xl shadow-2xl sm:h-80 md:h-[500px]">
-      <div className={`absolute inset-0 transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
-        <img
-          src={currentItem.signedUrl}
-          alt={currentItem.fileName}
-          className="h-full w-full object-cover"
-        />
+    <div className="absolute inset-0 overflow-hidden bg-[#120c0d]">
+      <div className="hero-wallpaper-track scale-[1.04] blur-[3.5px]">
+        {wallpaperItems.map((item, index) => (
+          <WallpaperTile
+            key={`${item.id}-${index}`}
+            item={item}
+            aspectRatio={aspectMap[item.id]}
+            onLoad={(event) => handleImageLoad(item.id, event)}
+            priority={index < 6}
+          />
+        ))}
       </div>
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-
-      <div className="absolute bottom-0 left-0 right-0 p-4 text-white sm:p-6">
-        {currentItem.uploaderName ? (
-          <p className="mb-1 font-lato text-xs opacity-90 sm:text-sm">
-            Compartilhado por <span className="font-semibold">{currentItem.uploaderName}</span>
-          </p>
-        ) : null}
-        {currentItem.message ? (
-          <p className="line-clamp-2 max-w-[90%] font-lato text-xs italic opacity-80 sm:text-sm">
-            &quot;{currentItem.message}&quot;
-          </p>
-        ) : null}
-      </div>
-
-      {totalItems > 1 ? (
-        <>
-          <button
-            type="button"
-            onClick={() => jumpTo(rotate(currentIndex, totalItems, -1))}
-            className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/30 p-2 text-white opacity-100 backdrop-blur-sm transition-all hover:scale-110 hover:bg-white/40 sm:left-4 sm:p-2.5 sm:opacity-0 sm:group-hover:opacity-100"
-            aria-label="Anterior"
-          >
-            <ChevronLeft size={20} strokeWidth={2.5} />
-          </button>
-          <button
-            type="button"
-            onClick={() => jumpTo(rotate(currentIndex, totalItems, 1))}
-            className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/30 p-2 text-white opacity-100 backdrop-blur-sm transition-all hover:scale-110 hover:bg-white/40 sm:right-4 sm:p-2.5 sm:opacity-0 sm:group-hover:opacity-100"
-            aria-label="Proxima"
-          >
-            <ChevronRight size={20} strokeWidth={2.5} />
-          </button>
-        </>
-      ) : null}
-
-      {totalItems > 1 ? (
-        <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 sm:bottom-4">
-          {items.map((item, index) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => jumpTo(index)}
-              className={`transition-all ${index === currentIndex
-                ? 'h-2 w-8 rounded-full bg-white'
-                : 'h-2 w-2 rounded-full bg-white/50 hover:bg-white/70'
-                }`}
-              aria-label={`Ir para foto ${index + 1}`}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className={`absolute inset-0 ${hasError ? 'bg-black/30' : 'bg-black/20'}`} />
     </div>
   );
 }

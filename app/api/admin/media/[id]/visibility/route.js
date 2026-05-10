@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireAdminRequest } from '@/lib/admin-session';
+import { getAdminAccessToken, requireAdminRequest } from '@/lib/admin-session';
 import { updateMediaVisibility } from '@/lib/media-service';
 
 export async function PATCH(request, { params }) {
@@ -16,7 +16,7 @@ export async function PATCH(request, { params }) {
   }
 
   try {
-    await updateMediaVisibility(params.id, isVisible);
+    await updateMediaVisibility(getAdminAccessToken(), params.id, isVisible);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

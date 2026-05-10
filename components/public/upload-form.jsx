@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleAlert as AlertCircle, CircleCheck as CheckCircle, Loader as Loader2, Upload, Video, X } from 'lucide-react';
 
-import { ACCEPTED_MIME_TYPES, MAX_FILE_SIZE_BYTES } from '@/lib/constants';
+import {
+  ACCEPTED_MIME_TYPES,
+  getMaxFileSizeBytes,
+  isVideoMimeType,
+  MAX_IMAGE_UPLOADS_PER_BATCH,
+  MAX_VIDEO_DURATION_SECONDS,
+  MAX_VIDEO_UPLOADS_PER_BATCH,
+} from '@/lib/constants';
 import { formatBytes } from '@/lib/format';
 
 function buildPreviewItem(file) {
@@ -12,7 +19,27 @@ function buildPreviewItem(file) {
     id: `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`,
     preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
     type: file.type.startsWith('image/') ? 'image' : 'video',
+    duration: null,
   };
+}
+
+function getVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      const duration = video.duration;
+      URL.revokeObjectURL(url);
+      resolve(duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`Nao foi possivel validar a duracao de ${file.name}.`));
+    };
+    video.src = url;
+  });
 }
 
 export function UploadForm() {
@@ -40,22 +67,67 @@ export function UploadForm() {
     };
   }, []);
 
-  const addFiles = useCallback((incomingFiles) => {
-    const validFiles = [];
+  const addFiles = useCallback(async (incomingFiles) => {
+    const selectedFiles = Array.from(incomingFiles || []);
+    const nextFiles = [];
+    let imageCount = filesRef.current.filter((item) => item.type === 'image').length;
+    let videoCount = filesRef.current.filter((item) => item.type === 'video').length;
+    let nextError = '';
 
-    for (const file of incomingFiles) {
+    for (const file of selectedFiles) {
+      let validatedDuration = null;
+
       if (!ACCEPTED_MIME_TYPES.includes(file.type)) {
+        nextError = `${file.name} possui um formato nao suportado.`;
         continue;
       }
 
-      if (file.size > MAX_FILE_SIZE_BYTES) {
+      const maxFileSize = getMaxFileSizeBytes(file.type);
+      if (file.size > maxFileSize) {
+        nextError = `${file.name} excede o limite de ${Math.round(maxFileSize / (1024 * 1024))} MB.`;
         continue;
       }
 
-      validFiles.push(buildPreviewItem(file));
+      if (isVideoMimeType(file.type)) {
+        if (videoCount >= MAX_VIDEO_UPLOADS_PER_BATCH) {
+          nextError = `Envie no maximo ${MAX_VIDEO_UPLOADS_PER_BATCH} videos por vez.`;
+          continue;
+        }
+
+        try {
+          validatedDuration = await getVideoDuration(file);
+          if (validatedDuration > MAX_VIDEO_DURATION_SECONDS) {
+            nextError = `${file.name} excede o limite de 2 minutos.`;
+            continue;
+          }
+        } catch (error) {
+          nextError = error instanceof Error ? error.message : `Nao foi possivel validar ${file.name}.`;
+          continue;
+        }
+
+        videoCount += 1;
+      } else {
+        if (imageCount >= MAX_IMAGE_UPLOADS_PER_BATCH) {
+          nextError = `Envie no maximo ${MAX_IMAGE_UPLOADS_PER_BATCH} fotos por vez.`;
+          continue;
+        }
+
+        imageCount += 1;
+      }
+
+      const previewItem = buildPreviewItem(file);
+      if (isVideoMimeType(file.type)) {
+        previewItem.duration = validatedDuration;
+      }
+
+      nextFiles.push(previewItem);
     }
 
-    setFiles((current) => [...current, ...validFiles]);
+    setErrorMessage(nextError);
+
+    if (nextFiles.length > 0) {
+      setFiles((current) => [...current, ...nextFiles]);
+    }
   }, []);
 
   const removeFile = (fileId) => {
@@ -78,7 +150,10 @@ export function UploadForm() {
     const formData = new FormData();
     formData.set('name', name.trim());
     formData.set('message', message.trim());
-    files.forEach((item) => formData.append('files', item.file));
+    files.forEach((item) => {
+      formData.append('files', item.file);
+      formData.append('fileDurations', item.type === 'video' && item.duration != null ? String(item.duration) : '');
+    });
 
     setUploading(true);
     setUploadState(null);
@@ -169,7 +244,7 @@ export function UploadForm() {
             Clique ou arraste seus arquivos aqui
           </p>
           <p className="relative z-10 mx-auto max-w-xs font-lato text-xs text-muted-foreground sm:max-w-none sm:text-sm">
-            Fotos (JPG, PNG, WEBP) e videos curtos (MP4, MOV) - ate 100 MB cada
+            Ate 10 fotos de 15 MB ou 3 videos de ate 2 minutos e 60 MB cada
           </p>
         </div>
 

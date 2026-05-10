@@ -36,8 +36,13 @@
   * {
     @apply border-border;
   }
+  html {
+    margin: 0;
+    padding: 0;
+  }
   body {
     @apply bg-background text-foreground;
+    margin: 0;
   }
 }
 
@@ -46,14 +51,14 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  color: #7c1c30;
+  color: currentColor;
 }
 .ornament-divider::before,
 .ornament-divider::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(to right, transparent, #7c1c30, transparent);
+  background: linear-gradient(to right, transparent, currentColor, transparent);
 }
 
 /* Floating animation */
@@ -103,4 +108,21 @@
   );
   background-size: 1000px 100%;
   animation: shimmer 2s infinite;
+}
+
+@keyframes hero-wallpaper-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.hero-wallpaper-track {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  width: max-content;
+  animation: hero-wallpaper-scroll 60s linear infinite;
 }

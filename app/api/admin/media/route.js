@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireAdminRequest } from '@/lib/admin-session';
+import { getAdminAccessToken, requireAdminRequest } from '@/lib/admin-session';
 import { deleteMediaItems, listAdminMedia } from '@/lib/media-service';
 
 export async function GET() {
@@ -9,7 +9,7 @@ export async function GET() {
   }
 
   try {
-    const items = await listAdminMedia();
+    const items = await listAdminMedia(getAdminAccessToken());
     return NextResponse.json({ items });
   } catch (error) {
     return NextResponse.json(
@@ -32,7 +32,7 @@ export async function DELETE(request) {
   }
 
   try {
-    await deleteMediaItems(ids);
+    await deleteMediaItems(getAdminAccessToken(), ids);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

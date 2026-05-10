@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 
-import { MAX_FILE_SIZE_BYTES, normalizeAcceptedMimeType } from '@/lib/constants';
+import {
+  getMaxFileSizeBytes,
+  isVideoMimeType,
+  MAX_IMAGE_UPLOADS_PER_BATCH,
+  MAX_VIDEO_DURATION_SECONDS,
+  MAX_VIDEO_UPLOADS_PER_BATCH,
+  normalizeAcceptedMimeType,
+} from '@/lib/constants';
 import { createMediaUpload } from '@/lib/media-service';
 import { rateLimit } from '@/lib/rate-limit';
 
@@ -39,28 +46,63 @@ export async function POST(request) {
   const files = formData
     .getAll('files')
     .filter((entry) => entry instanceof File);
+  const fileDurations = formData.getAll('fileDurations');
 
   if (files.length === 0) {
     return NextResponse.json({ error: 'Selecione pelo menos um arquivo.' }, { status: 400 });
   }
 
-  if (files.length > 20) {
-    return NextResponse.json({ error: 'Envie no maximo 20 arquivos por vez.' }, { status: 400 });
+  const imageFiles = files.filter((file) => !isVideoMimeType(file.type));
+  const videoFiles = files.filter((file) => isVideoMimeType(file.type));
+
+  if (imageFiles.length > MAX_IMAGE_UPLOADS_PER_BATCH) {
+    return NextResponse.json(
+      { error: `Envie no maximo ${MAX_IMAGE_UPLOADS_PER_BATCH} fotos por vez.` },
+      { status: 400 },
+    );
   }
 
-  for (const file of files) {
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: `${file.name} excede o limite de 100 MB.` },
-        { status: 400 },
-      );
-    }
+  if (videoFiles.length > MAX_VIDEO_UPLOADS_PER_BATCH) {
+    return NextResponse.json(
+      { error: `Envie no maximo ${MAX_VIDEO_UPLOADS_PER_BATCH} videos por vez.` },
+      { status: 400 },
+    );
+  }
 
-    if (!normalizeAcceptedMimeType(file.type)) {
+  for (const [index, file] of files.entries()) {
+    const mimeType = normalizeAcceptedMimeType(file.type);
+    if (!mimeType) {
       return NextResponse.json(
         { error: `${file.name} possui um formato nao suportado.` },
         { status: 400 },
       );
+    }
+
+    const maxFileSize = getMaxFileSizeBytes(file.type);
+    if (file.size > maxFileSize) {
+      return NextResponse.json(
+        { error: `${file.name} excede o limite de ${Math.round(maxFileSize / (1024 * 1024))} MB.` },
+        { status: 400 },
+      );
+    }
+
+    if (isVideoMimeType(file.type)) {
+      const rawDuration = fileDurations[index];
+      const durationSeconds = Number(rawDuration);
+
+      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        return NextResponse.json(
+          { error: `Nao foi possivel validar a duracao de ${file.name}.` },
+          { status: 400 },
+        );
+      }
+
+      if (durationSeconds > MAX_VIDEO_DURATION_SECONDS) {
+        return NextResponse.json(
+          { error: `${file.name} excede o limite de 2 minutos.` },
+          { status: 400 },
+        );
+      }
     }
   }
 

@@ -13,7 +13,7 @@ create table if not exists public.media_uploads (
   file_size bigint not null default 0,
   uploader_name text not null default '',
   message text not null default '',
-  is_visible boolean not null default false,
+  is_visible boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -92,7 +92,7 @@ begin
   end if;
 
   new.owner_user_id := configured_owner;
-  new.is_visible := coalesce(new.is_visible, false);
+  new.is_visible := coalesce(new.is_visible, true);
 
   return new;
 end;
@@ -132,7 +132,7 @@ create policy "Public can upload pending media"
   on public.media_uploads
   for insert
   to anon, authenticated
-  with check (is_visible = false);
+  with check (is_visible = true);
 
 create policy "Public can view visible media"
   on public.media_uploads

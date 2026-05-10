@@ -16,7 +16,7 @@ alter table public.media_uploads
   add column if not exists owner_user_id uuid references auth.users (id) on delete restrict;
 
 alter table public.media_uploads
-  add column if not exists is_visible boolean not null default false;
+  add column if not exists is_visible boolean not null default true;
 
 create or replace function public.current_project_owner_id()
 returns uuid
@@ -47,7 +47,7 @@ begin
   end if;
 
   new.owner_user_id := configured_owner;
-  new.is_visible := coalesce(new.is_visible, false);
+  new.is_visible := coalesce(new.is_visible, true);
 
   return new;
 end;
@@ -76,7 +76,7 @@ create policy "Public can upload pending media"
   on public.media_uploads
   for insert
   to anon, authenticated
-  with check (is_visible = false);
+  with check (is_visible = true);
 
 create policy "Public can view visible media"
   on public.media_uploads

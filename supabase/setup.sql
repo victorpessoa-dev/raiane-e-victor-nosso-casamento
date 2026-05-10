@@ -187,6 +187,7 @@ drop policy if exists "Service role can delete wedding media" on storage.objects
 drop policy if exists "Service role manages wedding media objects" on storage.objects;
 drop policy if exists "Public can upload wedding media objects" on storage.objects;
 drop policy if exists "Public can read visible wedding media objects" on storage.objects;
+drop policy if exists "Public can read wedding media objects" on storage.objects;
 drop policy if exists "Admins can manage wedding media objects" on storage.objects;
 drop policy if exists "Owner can manage wedding media objects" on storage.objects;
 drop policy if exists "Public can cleanup orphan wedding media objects" on storage.objects;

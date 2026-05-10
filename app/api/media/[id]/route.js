@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getAdminAccessToken, hasAdminSession } from '@/lib/admin-session';
 import { STORAGE_BUCKET } from '@/lib/constants';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 
 function createDownloadHeaderValue(fileName) {
   const normalizedName = String(fileName || 'arquivo').replace(/[\r\n"]/g, '').trim() || 'arquivo';
@@ -13,7 +13,7 @@ function createDownloadHeaderValue(fileName) {
 export async function GET(request, { params }) {
   const isAdmin = await hasAdminSession();
   const accessToken = isAdmin ? getAdminAccessToken() : '';
-  const supabase = createSupabaseServerClient(accessToken);
+  const supabase = createSupabaseServiceClient() || createSupabaseServerClient(accessToken);
 
   let query = supabase
     .from('media_uploads')

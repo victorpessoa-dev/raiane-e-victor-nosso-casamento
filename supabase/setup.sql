@@ -112,17 +112,6 @@ revoke all on function private.current_project_owner_id() from anon;
 grant usage on schema private to authenticated;
 grant execute on function private.current_project_owner_id() to authenticated;
 
-revoke all on function public.current_project_owner_id() from public;
-revoke all on function public.current_project_owner_id() from anon;
-revoke all on function public.current_project_owner_id() from authenticated;
-
-revoke all on function public.assign_project_owner_to_media_upload() from public;
-revoke all on function public.assign_project_owner_to_media_upload() from anon;
-revoke all on function public.assign_project_owner_to_media_upload() from authenticated;
-
-drop function if exists public.assign_project_owner_to_media_upload();
-drop function if exists public.current_project_owner_id();
-
 create index if not exists media_uploads_created_at_idx
   on public.media_uploads (created_at desc);
 

@@ -4,6 +4,9 @@ import { getAdminAccessToken, hasAdminSession } from '@/lib/admin-session';
 import { STORAGE_BUCKET } from '@/lib/constants';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function createDownloadHeaderValue(fileName) {
   const normalizedName = String(fileName || 'arquivo').replace(/[\r\n"]/g, '').trim() || 'arquivo';
   const encodedName = encodeURIComponent(normalizedName);
@@ -46,7 +49,7 @@ export async function GET(request, { params }) {
   const shouldDownload = request.nextUrl.searchParams.get('download') === '1';
   const arrayBuffer = await file.arrayBuffer();
   const headers = new Headers({
-    'Cache-Control': shouldDownload ? 'private, no-store' : 'public, max-age=300, s-maxage=300',
+    'Cache-Control': 'no-store, max-age=0',
     'Content-Type': record.mime_type || file.type || 'application/octet-stream',
   });
 
